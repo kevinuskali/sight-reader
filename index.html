@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sight Reading Trainer</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Code+Pro:wght@300;400&display=swap');
 
@@ -49,8 +50,35 @@
     font-size: 0.75rem;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
   }
+
+  /* ── Auth bar ── */
+  .auth-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    min-height: 1.8rem;
+  }
+  .auth-user { color: var(--accent2); }
+  .auth-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.3rem 0.8rem;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.7rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+  }
+  .auth-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .auth-btn.signed-in:hover { border-color: var(--red); color: var(--red); }
 
   .controls {
     display: flex;
@@ -371,6 +399,11 @@
 <h1>Sight Reader</h1>
 <div class="subtitle">Piano · Pitch Detection · Training Aid</div>
 
+<div class="auth-bar" id="auth-bar" style="display:none">
+  <span class="auth-user" id="auth-user"></span>
+  <button class="auth-btn" id="auth-btn">Sign in with Google</button>
+</div>
+
 <div class="controls">
   <div class="toggle-group" id="clef-toggle">
     <button class="toggle-btn active" data-val="treble">Treble</button>
@@ -427,6 +460,58 @@
 </div>
 
 <script>
+// ════════════════════════════════════════════════════════
+// SUPABASE CONFIG
+// Replace these two values with your project's URL and anon key.
+// Leave them as-is to use local storage only (no account required).
+// ════════════════════════════════════════════════════════
+const SUPABASE_URL      = 'https://ewpqefsfcckhslmfqpwb.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3cHFlZnNmY2NraHNsbWZxcHdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MzMxNzYsImV4cCI6MjA4NzAwOTE3Nn0.KWfdAkWT-CNHYAwXg76wVpr4ATCInwFudoRiEAaN5yY';
+
+// db is null when Supabase is not configured; the app falls back to localStorage.
+const db = (typeof window.supabase !== 'undefined' && SUPABASE_URL.startsWith('https://'))
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+// ════════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════════
+let currentUser = null;
+
+function updateAuthUI() {
+  const bar    = document.getElementById('auth-bar');
+  const userEl = document.getElementById('auth-user');
+  const btnEl  = document.getElementById('auth-btn');
+  if (!db) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  if (currentUser) {
+    userEl.textContent = currentUser.email;
+    btnEl.textContent  = 'Sign Out';
+    btnEl.classList.add('signed-in');
+  } else {
+    userEl.textContent = '';
+    btnEl.textContent  = 'Sign in with Google';
+    btnEl.classList.remove('signed-in');
+  }
+}
+
+async function signInWithGoogle() {
+  if (!db) return;
+  await db.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin + window.location.pathname },
+  });
+}
+
+async function signOut() {
+  if (!db) return;
+  await db.auth.signOut();
+}
+
+document.getElementById('auth-btn').addEventListener('click', () => {
+  if (currentUser) signOut(); else signInWithGoogle();
+});
+
 // ════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════
@@ -759,35 +844,88 @@ function updateScore() {
 }
 
 // ════════════════════════════════════════════════════════
-// SESSION HISTORY  (localStorage)
+// SESSION HISTORY  (Supabase when signed in, localStorage otherwise)
 // ════════════════════════════════════════════════════════
 const HISTORY_KEY = 'sightreader_history';
 let activeTab = 'daily';
+let historyCache = []; // avoids repeated async reads within a single render cycle
 
-function loadHistory() {
+function loadLocalHistory() {
   try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
   catch { return []; }
 }
 
-function saveSession() {
+async function loadHistory() {
+  if (db && currentUser) {
+    const { data, error } = await db
+      .from('sessions')
+      .select('*')
+      .order('ts', { ascending: false })
+      .limit(200);
+    if (error) { console.error('loadHistory:', error); return []; }
+    return data ?? [];
+  }
+  return loadLocalHistory();
+}
+
+async function saveSession() {
   if (total === 0) return;
-  const durationMs = sessionStart ? Date.now() - sessionStart : 0;
+  const durationMs  = sessionStart ? Date.now() - sessionStart : 0;
   const durationMin = durationMs / 60000;
-  const history = loadHistory();
-  history.unshift({
-    ts:      Date.now(),                          // raw timestamp for grouping
+  const entry = {
+    ts:      Date.now(),
     date:    new Date().toLocaleString(),
-    day:     new Date().toLocaleDateString(),     // "2/17/2026" — grouping key
+    day:     new Date().toLocaleDateString(),
     clef:    clefMode,
     notes:   numNotes,
     sharps:  sharpsOn,
     correct: correctCount,
     total:   total,
     pct:     Math.round(correctCount / total * 100),
-    mins:    durationMin,                         // float minutes
-  });
-  if (history.length > 200) history.length = 200;
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    mins:    durationMin,
+  };
+  if (db && currentUser) {
+    const { error } = await db
+      .from('sessions')
+      .insert({ ...entry, user_id: currentUser.id });
+    if (error) console.error('saveSession:', error);
+  } else {
+    const history = loadLocalHistory();
+    history.unshift(entry);
+    if (history.length > 200) history.length = 200;
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  }
+}
+
+// Called once when the user signs in: pushes any locally stored sessions
+// into Supabase and clears localStorage on success.
+async function mergeLocalHistory() {
+  const local = loadLocalHistory();
+  if (!local.length || !db || !currentUser) return;
+  const toInsert = local.map(({ id: _id, ...rest }) => ({
+    ...rest,
+    user_id: currentUser.id,
+  }));
+  const { error } = await db.from('sessions').insert(toInsert);
+  if (!error) {
+    localStorage.removeItem(HISTORY_KEY);
+  } else {
+    console.error('mergeLocalHistory:', error);
+  }
+}
+
+async function clearHistory() {
+  if (!confirm('Clear all session history?')) return;
+  if (db && currentUser) {
+    const { error } = await db
+      .from('sessions')
+      .delete()
+      .eq('user_id', currentUser.id);
+    if (error) { console.error('clearHistory:', error); return; }
+  } else {
+    localStorage.removeItem(HISTORY_KEY);
+  }
+  await renderHistory();
 }
 
 // Group sessions by calendar day, return array newest-first
@@ -798,7 +936,6 @@ function groupByDay(history) {
     if (!map.has(key)) map.set(key, { day: key, sessions: [] });
     map.get(key).sessions.push(s);
   }
-  // Sort days newest first
   return [...map.values()].sort((a, b) => {
     return new Date(b.sessions[0].ts || b.day) - new Date(a.sessions[0].ts || a.day);
   });
@@ -813,7 +950,7 @@ function fmtMins(mins) {
 
 function renderDailyView() {
   const el = document.getElementById('view-daily');
-  const history = loadHistory();
+  const history = historyCache;
   if (!history.length) {
     el.innerHTML = '<div class="no-history">No sessions recorded yet.</div>';
     return;
@@ -827,11 +964,10 @@ function renderDailyView() {
 
     // Format day label: "Today", "Yesterday", or date string
     const now = new Date();
-    const dayDate = new Date(d.sessions[0].ts || d.day);
     const todayStr     = now.toLocaleDateString();
     const yesterdayStr = new Date(now - 86400000).toLocaleDateString();
     let dayLabel = d.day;
-    if (d.day === todayStr)     dayLabel = `Today — ${d.day}`;
+    if (d.day === todayStr)          dayLabel = `Today — ${d.day}`;
     else if (d.day === yesterdayStr) dayLabel = `Yesterday — ${d.day}`;
 
     const sessionRows = d.sessions.map(s => `
@@ -870,7 +1006,7 @@ function renderDailyView() {
 
 function renderSessionLog() {
   const el = document.getElementById('view-sessions');
-  const history = loadHistory();
+  const history = historyCache;
   if (!history.length) {
     el.innerHTML = '<div class="no-history">No sessions recorded yet.</div>';
     return;
@@ -894,7 +1030,8 @@ function renderSessionLog() {
     </table>`;
 }
 
-function renderHistory() {
+async function renderHistory() {
+  historyCache = await loadHistory();
   renderDailyView();
   renderSessionLog();
 }
@@ -937,12 +1074,11 @@ function stopListening() {
   if (micStream) micStream.getTracks().forEach(t => t.stop());
   if (audioCtx)  audioCtx.close();
   pitchBuf = null;
-  saveSession();
-  renderHistory();
   document.getElementById('mic-dot').classList.remove('active');
   document.getElementById('mic-status').textContent = 'Mic off';
   document.getElementById('start-btn').textContent  = 'Start Listening';
   document.getElementById('pitch-display').textContent = '—';
+  saveSession().then(() => renderHistory());
 }
 
 // ════════════════════════════════════════════════════════
@@ -973,12 +1109,7 @@ document.getElementById('hint-btn').addEventListener('click', () => {
   updateScore();
 });
 
-document.getElementById('clear-btn').addEventListener('click', () => {
-  if (confirm('Clear all session history?')) {
-    localStorage.removeItem(HISTORY_KEY);
-    renderHistory();
-  }
-});
+document.getElementById('clear-btn').addEventListener('click', clearHistory);
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -988,7 +1119,28 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // INIT
 // ════════════════════════════════════════════════════════
 newQuestion();
-renderHistory();
+
+if (db) {
+  // onAuthStateChange fires immediately with INITIAL_SESSION, so it handles
+  // the first renderHistory() call as well as any subsequent sign-in/out.
+  db.auth.onAuthStateChange(async (event, session) => {
+    const prevUser = currentUser;
+    currentUser = session?.user ?? null;
+
+    // Merge any locally-stored sessions when the user signs in for the first time
+    // in this browser (or after signing out then back in as the same/different user).
+    if (event === 'SIGNED_IN' && currentUser && currentUser.id !== prevUser?.id) {
+      await mergeLocalHistory();
+    }
+
+    updateAuthUI();
+    await renderHistory();
+  });
+} else {
+  // Supabase not configured — run fully offline with localStorage.
+  updateAuthUI();
+  renderHistory();
+}
 
 // Redraw on resize/orientation change so mobile layout stays correct
 window.addEventListener('resize', () => redraw());
