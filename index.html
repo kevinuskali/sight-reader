@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sight Reading Trainer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Code+Pro:wght@300;400&display=swap');
+
+  :root {
+    --bg: #0e0e12;
+    --panel: #16161e;
+    --panel2: #1d1d28;
+    --border: #2a2a3a;
+    --accent: #c8a96e;
+    --accent2: #7eb8c8;
+    --green: #6ec88a;
+    --red: #c86e6e;
+    --text: #e8e4d8;
+    --muted: #7a7870;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Source Code Pro', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem 4rem;
+    background-image:
+      radial-gradient(ellipse at 20% 0%, rgba(200,169,110,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 100%, rgba(126,184,200,0.06) 0%, transparent 60%);
+  }
+
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 0.2rem;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 2rem;
+  }
+
+  .controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 2rem;
+  }
+
+  .toggle-group {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0.5rem 1.1rem;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+    border-right: 1px solid var(--border);
+  }
+  .toggle-btn:last-child { border-right: none; }
+  .toggle-btn.active { background: var(--accent); color: #0e0e12; font-weight: 700; }
+
+  .main-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem 2.5rem 2.5rem;
+    width: 100%;
+    max-width: 740px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.2rem;
+  }
+
+  #staff-container { width: 100%; }
+  #staff-svg { width: 100%; height: auto; display: block; }
+
+  .note-name-display {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.8rem;
+    color: var(--accent);
+    min-height: 3.2rem;
+    display: flex;
+    align-items: center;
+    letter-spacing: 0.05em;
+    transition: color 0.3s;
+  }
+  .note-name-display.correct { color: var(--green); }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+
+  .mic-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .mic-dot.active { background: var(--green); animation: pulse 1s infinite; }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .pitch-display {
+    color: var(--accent2);
+    font-size: 0.78rem;
+    min-width: 150px;
+    text-align: center;
+  }
+
+  .start-btn {
+    background: var(--accent);
+    color: #0e0e12;
+    border: none;
+    border-radius: 6px;
+    padding: 0.75rem 2.5rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: opacity 0.2s;
+  }
+  .start-btn:hover { opacity: 0.85; }
+
+  .score-display {
+    display: flex;
+    gap: 2rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+  .score-display span { color: var(--text); font-size: 1rem; }
+
+  .hint-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.3rem 0.9rem;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.7rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+  }
+  .hint-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  #hint-text {
+    color: var(--accent);
+    font-size: 0.85rem;
+    min-height: 1rem;
+    font-family: 'Playfair Display', serif;
+  }
+
+  /* ── History panel ── */
+  .history-section {
+    width: 100%;
+    max-width: 740px;
+    margin-top: 2rem;
+  }
+
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .history-title {
+    font-family: 'Playfair Display', serif;
+    color: var(--accent);
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+  }
+
+  .clear-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    padding: 0.25rem 0.7rem;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.65rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+  }
+  .clear-btn:hover { border-color: var(--red); color: var(--red); }
+
+  .tab-bar {
+    display: flex;
+    margin-bottom: 1rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    width: fit-content;
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0.45rem 1.2rem;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+    border-right: 1px solid var(--border);
+  }
+  .tab-btn:last-child { border-right: none; }
+  .tab-btn.active { background: var(--accent); color: #0e0e12; font-weight: 700; }
+
+  .history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+  }
+  .history-table th {
+    text-align: left;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    font-weight: 400;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .history-table td {
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid #1e1e2a;
+    color: var(--text);
+  }
+  .history-table tr:hover td { background: var(--panel2); }
+
+  .day-block {
+    margin-bottom: 1.5rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .day-header {
+    padding: 0.6rem 1rem;
+    background: var(--panel2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'Playfair Display', serif;
+    color: var(--accent);
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+  }
+  .day-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .stat-cell {
+    padding: 1rem 1.2rem;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .stat-cell:last-child { border-right: none; }
+  .stat-label {
+    font-size: 0.63rem;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.6rem;
+    color: var(--text);
+    line-height: 1;
+  }
+  .stat-value.green { color: var(--green); }
+  .stat-value.blue  { color: var(--accent2); }
+  .stat-value.gold  { color: var(--accent); }
+  .stat-sub {
+    font-size: 0.63rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+  .session-rows { border-top: 1px solid var(--border); }
+  .session-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto auto;
+    gap: 0.75rem;
+    padding: 0.35rem 1rem;
+    border-top: 1px solid #1a1a26;
+    font-size: 0.7rem;
+    color: var(--muted);
+    align-items: center;
+  }
+  .session-row:first-child { border-top: none; }
+  .session-row:hover { background: var(--panel2); }
+
+  .pill {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+  }
+  .pill-good  { background: rgba(110,200,138,0.15); color: var(--green); }
+  .pill-total { background: rgba(200,169,110,0.15); color: var(--accent); }
+  .pill-blue  { background: rgba(126,184,200,0.15); color: var(--accent2); }
+
+  .no-history {
+    color: var(--muted);
+    font-size: 0.78rem;
+    padding: 1.5rem 0;
+    text-align: center;
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+
+<h1>Sight Reader</h1>
+<div class="subtitle">Piano · Pitch Detection · Training Aid</div>
+
+<div class="controls">
+  <div class="toggle-group" id="clef-toggle">
+    <button class="toggle-btn active" data-val="treble">Treble</button>
+    <button class="toggle-btn" data-val="bass">Bass</button>
+    <button class="toggle-btn" data-val="both">Both</button>
+  </div>
+  <div class="toggle-group" id="notes-toggle">
+    <button class="toggle-btn active" data-val="1">1 Note</button>
+    <button class="toggle-btn" data-val="2">2 Notes</button>
+  </div>
+  <div class="toggle-group" id="sharps-toggle">
+    <button class="toggle-btn active" data-val="off">No Sharps</button>
+    <button class="toggle-btn" data-val="on">Sharps</button>
+  </div>
+</div>
+
+<div class="main-card">
+  <div id="staff-container">
+    <svg id="staff-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+
+  <div class="note-name-display" id="note-display">—</div>
+  <div id="hint-text"></div>
+
+  <div class="status-bar">
+    <div class="mic-dot" id="mic-dot"></div>
+    <div id="mic-status">Mic off</div>
+    <div class="pitch-display" id="pitch-display">—</div>
+  </div>
+
+  <button class="start-btn" id="start-btn">Start Listening</button>
+
+  <div class="score-display">
+    <div>Correct <span id="score-correct">0</span></div>
+    <div>Streak <span id="score-streak">0</span></div>
+    <div>Total <span id="score-total">0</span></div>
+  </div>
+
+  <button class="hint-btn" id="hint-btn">Show Answer</button>
+</div>
+
+<!-- Session History -->
+<div class="history-section">
+  <div class="history-header">
+    <div class="history-title">Practice History</div>
+    <button class="clear-btn" id="clear-btn">Clear All</button>
+  </div>
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="daily">Daily Summary</button>
+    <button class="tab-btn" data-tab="sessions">Session Log</button>
+  </div>
+  <div id="view-daily"></div>
+  <div id="view-sessions" style="display:none"></div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════
+let clefMode = 'treble';
+let numNotes = 1;
+let sharpsOn = false;
+let listening = false;
+let audioCtx = null, analyser = null, micStream = null, rafId = null;
+let correctCount = 0, streak = 0, total = 0;
+let currentNotes = [];
+let transitioning = false;
+let sessionStart = null; // set when listening begins
+
+// ════════════════════════════════════════════════════════
+// SVG LAYOUT CONSTANTS
+// ════════════════════════════════════════════════════════
+const LG      = 24;   // pixels between adjacent staff lines
+const NR      = 11;   // note-head x-radius
+const SW      = 2;    // staff line stroke width
+const X1      = 72;   // staff left x
+const X2      = 580;  // staff right x
+const NX      = 350;  // note head x
+const LEDPAD  = LG * 3.5; // padding above/below for ledger lines
+const STAFFH  = 4 * LG;   // total height of one staff (top to bottom line)
+
+// ════════════════════════════════════════════════════════
+// NOTE TABLES
+// sp = staff-position steps counted UP from the bottom staff line (sp=0).
+// Even sp = line note; odd sp = space note.
+// Staff lines: sp 0,2,4,6,8  |  Spaces: sp 1,3,5,7
+// Treble clef: bottom line = E4, so sp 2 = G4 (G line), sp 6 = D5, etc.
+// Bass clef:   bottom line = G2, so sp 4 = D3, sp 6 = F3 (F line), etc.
+// ════════════════════════════════════════════════════════
+const TREBLE_NATURALS = [
+  { name:'C', octave:4, sp:-2 }, // middle C — ledger line below
+  { name:'D', octave:4, sp:-1 },
+  { name:'E', octave:4, sp: 0 }, // bottom line (E4)
+  { name:'F', octave:4, sp: 1 },
+  { name:'G', octave:4, sp: 2 }, // G line — treble clef curl
+  { name:'A', octave:4, sp: 3 },
+  { name:'B', octave:4, sp: 4 },
+  { name:'C', octave:5, sp: 5 },
+  { name:'D', octave:5, sp: 6 },
+  { name:'E', octave:5, sp: 7 },
+  { name:'F', octave:5, sp: 8 }, // top line (F5)
+  { name:'G', octave:5, sp: 9 },
+  { name:'A', octave:5, sp:10 },
+  { name:'B', octave:5, sp:11 },
+  { name:'C', octave:6, sp:12 }, // ledger line above
+];
+
+const BASS_NATURALS = [
+  { name:'F', octave:2, sp:-1 }, // just below staff
+  { name:'G', octave:2, sp: 0 }, // bottom line (G2)
+  { name:'A', octave:2, sp: 1 },
+  { name:'B', octave:2, sp: 2 },
+  { name:'C', octave:3, sp: 3 },
+  { name:'D', octave:3, sp: 4 },
+  { name:'E', octave:3, sp: 5 },
+  { name:'F', octave:3, sp: 6 }, // F line — bass clef dots straddle this
+  { name:'G', octave:3, sp: 7 },
+  { name:'A', octave:3, sp: 8 }, // top line (A3)
+  { name:'B', octave:3, sp: 9 },
+  { name:'C', octave:4, sp:10 }, // middle C — ledger line above
+  { name:'D', octave:4, sp:11 },
+  { name:'E', octave:4, sp:12 },
+];
+
+function expandWithSharps(list) {
+  const noSharpAfter = new Set(['E','B']);
+  const out = [];
+  list.forEach((n, i) => {
+    out.push(n);
+    if (i < list.length - 1 && !noSharpAfter.has(n.name))
+      out.push({ name: n.name + '#', octave: n.octave, sp: n.sp + 0.5 });
+  });
+  return out;
+}
+
+function getNoteList(clefType) {
+  const base = clefType === 'treble' ? TREBLE_NATURALS : BASS_NATURALS;
+  const pool = sharpsOn ? expandWithSharps(base) : base;
+  return pool.filter(n => n.sp >= -2 && n.sp <= 12);
+}
+
+function pickNotes() {
+  const chosenClef = clefMode === 'both'
+    ? (Math.random() < 0.5 ? 'treble' : 'bass') : clefMode;
+  const list = getNoteList(chosenClef).map(n => ({ ...n, clef: chosenClef }));
+  if (numNotes === 1) return [list[Math.floor(Math.random() * list.length)]];
+  let a, b, tries = 0;
+  do {
+    a = list[Math.floor(Math.random() * list.length)];
+    b = list[Math.floor(Math.random() * list.length)];
+    tries++;
+  } while (Math.abs(a.sp - b.sp) < 2 && tries < 80);
+  return [a, b].sort((x, y) => x.sp - y.sp);
+}
+
+// ════════════════════════════════════════════════════════
+// SVG DRAWING
+// ════════════════════════════════════════════════════════
+const NS  = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('staff-svg');
+
+function mk(tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+// staffTop = y-coord of the TOP staff line
+function lineY(staffTop, idx) { return staffTop + idx * LG; } // idx 0=top, 4=bottom
+function spToY(sp, staffTop)  { return staffTop + (8 - sp) * (LG / 2); }
+
+function drawStaffLines(staffTop) {
+  for (let i = 0; i < 5; i++) {
+    const y = lineY(staffTop, i);
+    svg.appendChild(mk('line', { x1:X1, x2:X2, y1:y, y2:y, stroke:'#d4cfc0', 'stroke-width':SW }));
+  }
+  // Left and right bar lines
+  svg.appendChild(mk('line', { x1:X1, x2:X1, y1:lineY(staffTop,0), y2:lineY(staffTop,4), stroke:'#d4cfc0', 'stroke-width':SW }));
+  svg.appendChild(mk('line', { x1:X2, x2:X2, y1:lineY(staffTop,0), y2:lineY(staffTop,4), stroke:'#d4cfc0', 'stroke-width':SW }));
+}
+
+// Treble clef: the curl wraps around the G line (sp=2, lineIdx=3 from top i.e. idx 3)
+// The glyph's reference point in most fonts is roughly the baseline of the bottom curl.
+// We position it so the curl circle sits on the G line.
+// G line y = spToY(2, staffTop) = staffTop + (8-2)*LG/2 = staffTop + 3*LG  (lineIdx 3 from top)
+// Empirically for serif/unicode 𝄞 at font-size F: the G-circle center is ~0.26*F above the text baseline.
+// We want: staffTop + 3*LG = baseline - 0.26*F  →  baseline = staffTop + 3*LG + 0.26*F
+function drawTrebleClef(staffTop) {
+  const F = 5.5 * LG;  // font-size scaled to staff
+  const gLineY = spToY(2, staffTop);            // G4 line
+  const baseline = gLineY + 0.27 * F;
+  // x: nudge just inside the left bar line
+  svg.appendChild(mk('text', {
+    x: X1 + 2,
+    y: baseline,
+    'font-size': F,
+    fill: '#c8a96e',
+    'font-family': 'serif',
+  }, '𝄞'));
+}
+
+// Bass clef: the two dots straddle the F line (sp=6, lineIdx=1 from top).
+// The glyph's ascent in most fonts puts the top dot ~0.72*F above the baseline.
+// We want top-dot y ≈ F-line y - 0.5*LG and bottom-dot y ≈ F-line y + 0.5*LG
+// So we anchor: baseline ≈ fLineY + 0.55*F  (tune until dots sit right)
+function drawBassClef(staffTop) {
+  const F = 2.8 * LG;
+  const fLineY = spToY(6, staffTop);            // F3 line
+  const baseline = fLineY + 0.52 * F;
+  svg.appendChild(mk('text', {
+    x: X1 + 4,
+    y: baseline,
+    'font-size': F,
+    fill: '#c8a96e',
+    'font-family': 'serif',
+  }, '𝄢'));
+}
+
+function drawNote(note, staffTop) {
+  const x = NX;
+  const y = spToY(note.sp, staffTop);
+
+  // Ledger lines below staff (sp < 0): draw at sp = 0, -2, -4 …
+  if (note.sp < 0) {
+    for (let s = 0; s >= Math.ceil(note.sp - 0.1); s -= 2) {
+      const ly = spToY(s, staffTop);
+      svg.appendChild(mk('line', { x1:x-20, x2:x+20, y1:ly, y2:ly, stroke:'#d4cfc0', 'stroke-width':SW }));
+    }
+  }
+  // Ledger lines above staff (sp > 8): draw at sp = 10, 12 …
+  if (note.sp > 8) {
+    for (let s = 10; s <= note.sp + 0.1; s += 2) {
+      const ly = spToY(s, staffTop);
+      svg.appendChild(mk('line', { x1:x-20, x2:x+20, y1:ly, y2:ly, stroke:'#d4cfc0', 'stroke-width':SW }));
+    }
+  }
+
+  // Sharp symbol
+  if (note.name.includes('#')) {
+    svg.appendChild(mk('text', {
+      x: x - 32, y: y + 7,
+      'font-size': 26, fill: '#7eb8c8', 'font-family': 'serif'
+    }, '♯'));
+  }
+
+  // Note head
+  svg.appendChild(mk('ellipse', {
+    cx: x, cy: y, rx: NR, ry: NR * 0.68,
+    fill: '#e8e4d8',
+    transform: `rotate(-12,${x},${y})`
+  }));
+
+  // Stem
+  const stemDown = note.sp > 4;
+  const sx = stemDown ? x - NR : x + NR;
+  svg.appendChild(mk('line', {
+    x1:sx, x2:sx, y1:y, y2: stemDown ? y + 52 : y - 52,
+    stroke:'#e8e4d8', 'stroke-width':2.2
+  }));
+}
+
+function redraw() {
+  svg.innerHTML = '';
+  const useBoth  = clefMode === 'both';
+  const interGap = LG * 4;
+
+  let trebleTop, bassTop, totalH;
+  if (useBoth) {
+    trebleTop = LEDPAD;
+    bassTop   = trebleTop + STAFFH + interGap;
+    totalH    = bassTop + STAFFH + LEDPAD;
+  } else {
+    trebleTop = LEDPAD;
+    totalH    = trebleTop + STAFFH + LEDPAD;
+    bassTop   = trebleTop;
+  }
+
+  svg.setAttribute('viewBox', `0 0 ${X2 + 20} ${totalH}`);
+
+  if (useBoth) {
+    // Grand staff brace
+    svg.appendChild(mk('line', {
+      x1:X1-4, x2:X1-4,
+      y1:lineY(trebleTop,0), y2:lineY(bassTop,4),
+      stroke:'#d4cfc0', 'stroke-width':4
+    }));
+    drawStaffLines(trebleTop);
+    drawTrebleClef(trebleTop);
+    drawStaffLines(bassTop);
+    drawBassClef(bassTop);
+    currentNotes.forEach(n => drawNote(n, n.clef === 'treble' ? trebleTop : bassTop));
+  } else {
+    drawStaffLines(trebleTop);
+    const noteClef = currentNotes.length ? currentNotes[0].clef : clefMode;
+    if (noteClef === 'treble') drawTrebleClef(trebleTop);
+    else drawBassClef(trebleTop);
+    currentNotes.forEach(n => drawNote(n, trebleTop));
+  }
+}
+
+// ════════════════════════════════════════════════════════
+// QUESTION FLOW
+// ════════════════════════════════════════════════════════
+function newQuestion() {
+  transitioning = false;
+  document.getElementById('hint-text').textContent = '';
+  document.getElementById('note-display').textContent = '—';
+  document.getElementById('note-display').className = 'note-name-display';
+  currentNotes = pickNotes();
+  redraw();
+}
+
+// ════════════════════════════════════════════════════════
+// PITCH DETECTION
+// ════════════════════════════════════════════════════════
+function freqToNote(freq) {
+  if (freq <= 0) return null;
+  const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const semis  = 12 * Math.log2(freq / 440) + 9 + 48;
+  const r = Math.round(semis);
+  return { name: names[((r % 12) + 12) % 12], octave: Math.floor(r / 12) };
+}
+
+function autoCorrelate(buf, sr) {
+  const SIZE = buf.length;
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  if (Math.sqrt(rms / SIZE) < 0.012) return -1;
+
+  let r1 = 0, r2 = SIZE - 1;
+  for (let i = 0; i < SIZE/2; i++) { if (Math.abs(buf[i]) < 0.2) { r1 = i; break; } }
+  for (let i = 1; i < SIZE/2; i++) { if (Math.abs(buf[SIZE-i]) < 0.2) { r2 = SIZE-i; break; } }
+  const sl = buf.slice(r1, r2), SZ = sl.length;
+  const c = new Float32Array(SZ);
+  for (let i = 0; i < SZ; i++) for (let j = 0; j < SZ-i; j++) c[i] += sl[j]*sl[j+i];
+
+  let d = 0;
+  while (c[d] > c[d+1]) d++;
+  let maxVal = -1, maxPos = -1;
+  for (let i = d; i < SZ; i++) if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+
+  let T0 = maxPos;
+  const x1 = c[T0-1], x2 = c[T0], x3 = c[T0+1];
+  const a = (x1+x3-2*x2)/2, b = (x3-x1)/2;
+  if (a) T0 = T0 - b/(2*a);
+  return sr / T0;
+}
+
+let pitchBuf = null, lastCorrectTime = 0;
+
+function detectPitch() {
+  if (!analyser || !listening) return;
+  if (!pitchBuf) pitchBuf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(pitchBuf);
+  const freq = autoCorrelate(pitchBuf, audioCtx.sampleRate);
+  const pitchEl = document.getElementById('pitch-display');
+  if (freq > 0) {
+    const det = freqToNote(freq);
+    pitchEl.textContent = `${det.name}${det.octave} · ${Math.round(freq)} Hz`;
+    checkAnswer(det);
+  } else {
+    pitchEl.textContent = '—';
+  }
+  rafId = requestAnimationFrame(detectPitch);
+}
+
+function checkAnswer(det) {
+  if (!currentNotes.length || transitioning) return;
+  if (Date.now() - lastCorrectTime < 700) return;
+  if (numNotes === 1) {
+    const n = currentNotes[0];
+    if (det.name === n.name && det.octave === n.octave) onCorrect();
+  } else {
+    const idx = currentNotes.findIndex(n => det.name === n.name && det.octave === n.octave);
+    if (idx !== -1 && !currentNotes[idx]._matched) {
+      currentNotes[idx]._matched = true;
+      if (currentNotes.every(n => n._matched)) onCorrect();
+    }
+  }
+}
+
+function onCorrect() {
+  lastCorrectTime = Date.now();
+  transitioning = true;
+  correctCount++; streak++; total++;
+  updateScore();
+  const label = currentNotes.map(n => n.name + n.octave).join(' + ');
+  const el = document.getElementById('note-display');
+  el.textContent = '✓ ' + label;
+  el.className = 'note-name-display correct';
+  setTimeout(newQuestion, 900);
+}
+
+function updateScore() {
+  document.getElementById('score-correct').textContent = correctCount;
+  document.getElementById('score-streak').textContent  = streak;
+  document.getElementById('score-total').textContent   = total;
+}
+
+// ════════════════════════════════════════════════════════
+// SESSION HISTORY  (localStorage)
+// ════════════════════════════════════════════════════════
+const HISTORY_KEY = 'sightreader_history';
+let activeTab = 'daily';
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveSession() {
+  if (total === 0) return;
+  const durationMs = sessionStart ? Date.now() - sessionStart : 0;
+  const durationMin = durationMs / 60000;
+  const history = loadHistory();
+  history.unshift({
+    ts:      Date.now(),                          // raw timestamp for grouping
+    date:    new Date().toLocaleString(),
+    day:     new Date().toLocaleDateString(),     // "2/17/2026" — grouping key
+    clef:    clefMode,
+    notes:   numNotes,
+    sharps:  sharpsOn,
+    correct: correctCount,
+    total:   total,
+    pct:     Math.round(correctCount / total * 100),
+    mins:    durationMin,                         // float minutes
+  });
+  if (history.length > 200) history.length = 200;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+// Group sessions by calendar day, return array newest-first
+function groupByDay(history) {
+  const map = new Map();
+  for (const s of history) {
+    const key = s.day || new Date(s.ts || s.date).toLocaleDateString();
+    if (!map.has(key)) map.set(key, { day: key, sessions: [] });
+    map.get(key).sessions.push(s);
+  }
+  // Sort days newest first
+  return [...map.values()].sort((a, b) => {
+    return new Date(b.sessions[0].ts || b.day) - new Date(a.sessions[0].ts || a.day);
+  });
+}
+
+function fmtMins(mins) {
+  if (mins < 1) return `${Math.round(mins * 60)}s`;
+  const m = Math.floor(mins);
+  const s = Math.round((mins - m) * 60);
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function renderDailyView() {
+  const el = document.getElementById('view-daily');
+  const history = loadHistory();
+  if (!history.length) {
+    el.innerHTML = '<div class="no-history">No sessions recorded yet.</div>';
+    return;
+  }
+  const days = groupByDay(history);
+  el.innerHTML = days.map(d => {
+    const totalCorrect = d.sessions.reduce((s, x) => s + x.correct, 0);
+    const totalMins    = d.sessions.reduce((s, x) => s + (x.mins || 0), 0);
+    const speed        = totalMins > 0 ? (totalCorrect / totalMins).toFixed(1) : '—';
+    const speedNum     = totalMins > 0 ? parseFloat(speed) : null;
+
+    // Format day label: "Today", "Yesterday", or date string
+    const now = new Date();
+    const dayDate = new Date(d.sessions[0].ts || d.day);
+    const todayStr     = now.toLocaleDateString();
+    const yesterdayStr = new Date(now - 86400000).toLocaleDateString();
+    let dayLabel = d.day;
+    if (d.day === todayStr)     dayLabel = `Today — ${d.day}`;
+    else if (d.day === yesterdayStr) dayLabel = `Yesterday — ${d.day}`;
+
+    const sessionRows = d.sessions.map(s => `
+      <div class="session-row">
+        <span>${new Date(s.ts || s.date).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+        <span style="text-transform:capitalize">${s.clef}${s.sharps ? ' ♯' : ''}</span>
+        <span><span class="pill pill-good">${s.correct} correct</span></span>
+        <span>${fmtMins(s.mins || 0)}</span>
+        <span><span class="pill pill-blue">${s.mins > 0 ? (s.correct / s.mins).toFixed(1) : '—'} /min</span></span>
+      </div>`).join('');
+
+    return `
+      <div class="day-block">
+        <div class="day-header">${dayLabel}</div>
+        <div class="day-stats">
+          <div class="stat-cell">
+            <div class="stat-label">Correct Notes</div>
+            <div class="stat-value green">${totalCorrect}</div>
+            <div class="stat-sub">across ${d.sessions.length} session${d.sessions.length > 1 ? 's' : ''}</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">Time Practiced</div>
+            <div class="stat-value blue">${fmtMins(totalMins)}</div>
+            <div class="stat-sub">total</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-label">Speed</div>
+            <div class="stat-value gold">${speedNum !== null ? speedNum.toFixed(1) : '—'}</div>
+            <div class="stat-sub">correct notes / min</div>
+          </div>
+        </div>
+        <div class="session-rows">${sessionRows}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderSessionLog() {
+  const el = document.getElementById('view-sessions');
+  const history = loadHistory();
+  if (!history.length) {
+    el.innerHTML = '<div class="no-history">No sessions recorded yet.</div>';
+    return;
+  }
+  const rows = history.map(s => `
+    <tr>
+      <td>${new Date(s.ts || s.date).toLocaleString()}</td>
+      <td style="text-transform:capitalize">${s.clef}${s.sharps ? ' ♯' : ''}</td>
+      <td>${s.notes}</td>
+      <td><span class="pill pill-good">${s.correct} / ${s.total}</span></td>
+      <td><span class="pill pill-total">${s.pct}%</span></td>
+      <td>${fmtMins(s.mins || 0)}</td>
+      <td><span class="pill pill-blue">${s.mins > 0 ? (s.correct / s.mins).toFixed(1) : '—'} /min</span></td>
+    </tr>`).join('');
+  el.innerHTML = `
+    <table class="history-table">
+      <thead><tr>
+        <th>Time</th><th>Clef</th><th>Notes</th><th>Score</th><th>Acc.</th><th>Duration</th><th>Speed</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function renderHistory() {
+  renderDailyView();
+  renderSessionLog();
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('view-daily').style.display    = tab === 'daily'    ? '' : 'none';
+  document.getElementById('view-sessions').style.display = tab === 'sessions' ? '' : 'none';
+}
+
+// ════════════════════════════════════════════════════════
+// MIC
+// ════════════════════════════════════════════════════════
+async function startListening() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStream = stream;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    listening    = true;
+    correctCount = 0; streak = 0; total = 0;
+    sessionStart = Date.now();
+    updateScore();
+    document.getElementById('mic-dot').classList.add('active');
+    document.getElementById('mic-status').textContent = 'Listening';
+    document.getElementById('start-btn').textContent  = 'Stop';
+    newQuestion();
+    detectPitch();
+  } catch(e) {
+    alert('Microphone access denied. Please allow mic access and reload.');
+  }
+}
+
+function stopListening() {
+  listening = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx)  audioCtx.close();
+  pitchBuf = null;
+  saveSession();
+  renderHistory();
+  document.getElementById('mic-dot').classList.remove('active');
+  document.getElementById('mic-status').textContent = 'Mic off';
+  document.getElementById('start-btn').textContent  = 'Start Listening';
+  document.getElementById('pitch-display').textContent = '—';
+}
+
+// ════════════════════════════════════════════════════════
+// CONTROLS
+// ════════════════════════════════════════════════════════
+function setupToggle(id, cb) {
+  document.getElementById(id).querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById(id).querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cb(btn.dataset.val);
+    });
+  });
+}
+
+setupToggle('clef-toggle',   val => { clefMode  = val;            newQuestion(); });
+setupToggle('notes-toggle',  val => { numNotes  = parseInt(val);  newQuestion(); });
+setupToggle('sharps-toggle', val => { sharpsOn  = val === 'on';   newQuestion(); });
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  if (listening) stopListening(); else startListening();
+});
+
+document.getElementById('hint-btn').addEventListener('click', () => {
+  const label = currentNotes.map(n => n.name + n.octave).join(' + ');
+  document.getElementById('hint-text').textContent = label;
+  streak = 0; total++;
+  updateScore();
+});
+
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (confirm('Clear all session history?')) {
+    localStorage.removeItem(HISTORY_KEY);
+    renderHistory();
+  }
+});
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// ════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════
+newQuestion();
+renderHistory();
+</script>
+</body>
+</html>
