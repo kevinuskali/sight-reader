@@ -392,6 +392,18 @@
     .day-stats { grid-template-columns: repeat(3,1fr); }
     .stat-value { font-size: 1.25rem; }
   }
+
+  #db-error {
+    display: none;
+    background: rgba(220,60,60,0.15);
+    border: 1px solid rgba(220,60,60,0.4);
+    color: #e07070;
+    border-radius: 6px;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.78rem;
+    margin-bottom: 0.75rem;
+    word-break: break-word;
+  }
 </style>
 </head>
 <body>
@@ -403,6 +415,8 @@
   <span class="auth-user" id="auth-user"></span>
   <button class="auth-btn" id="auth-btn">Sign in with Google</button>
 </div>
+
+<div id="db-error"></div>
 
 <div class="controls">
   <div class="toggle-group" id="clef-toggle">
@@ -868,6 +882,12 @@ async function loadHistory() {
   return loadLocalHistory();
 }
 
+function showDbError(msg) {
+  const el = document.getElementById('db-error');
+  el.textContent = 'Cloud save failed: ' + msg;
+  el.style.display = 'block';
+}
+
 async function saveSession() {
   if (total === 0) return;
   const durationMs  = sessionStart ? Date.now() - sessionStart : 0;
@@ -888,7 +908,10 @@ async function saveSession() {
     const { error } = await db
       .from('sessions')
       .insert({ ...entry, user_id: currentUser.id });
-    if (error) console.error('saveSession:', error);
+    if (error) {
+      console.error('saveSession:', error);
+      showDbError(error.message);
+    }
   } else {
     const history = loadLocalHistory();
     history.unshift(entry);
