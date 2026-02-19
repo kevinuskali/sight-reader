@@ -218,9 +218,6 @@
   }
 
   .history-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     margin-bottom: 1rem;
   }
 
@@ -230,20 +227,6 @@
     font-size: 1.1rem;
     letter-spacing: 0.05em;
   }
-
-  .clear-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    border-radius: 4px;
-    padding: 0.25rem 0.7rem;
-    font-family: 'Source Code Pro', monospace;
-    font-size: 0.65rem;
-    cursor: pointer;
-    letter-spacing: 0.08em;
-    transition: all 0.2s;
-  }
-  .clear-btn:hover { border-color: var(--red); color: var(--red); }
 
   .tab-bar {
     display: flex;
@@ -463,7 +446,6 @@
 <div class="history-section">
   <div class="history-header">
     <div class="history-title">Practice History</div>
-    <button class="clear-btn" id="clear-btn">Clear All</button>
   </div>
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="daily">Daily Summary</button>
@@ -538,6 +520,8 @@ let correctCount = 0, streak = 0, total = 0;
 let currentNotes = [];
 let transitioning = false;
 let sessionStart = null; // set when listening begins
+let currentSessionId = null;
+let saveTimer = null;
 
 // ════════════════════════════════════════════════════════
 // SVG LAYOUT CONSTANTS
@@ -844,6 +828,7 @@ function onCorrect() {
   transitioning = true;
   correctCount++; streak++; total++;
   updateScore();
+  scheduleSave();
   const label = currentNotes.map(n => n.name + n.octave).join(' + ');
   const el = document.getElementById('note-display');
   el.textContent = '✓ ' + label;
@@ -884,18 +869,37 @@ async function loadHistory() {
 
 function showDbError(msg) {
   const el = document.getElementById('db-error');
+  el.style.background = 'rgba(220,60,60,0.15)';
+  el.style.borderColor = 'rgba(220,60,60,0.4)';
+  el.style.color = '#e07070';
   el.textContent = 'Cloud save failed: ' + msg;
   el.style.display = 'block';
 }
 
-async function saveSession() {
+function showDbStatus(msg) {
+  const el = document.getElementById('db-error');
+  el.style.background = 'rgba(60,160,100,0.15)';
+  el.style.borderColor = 'rgba(60,160,100,0.4)';
+  el.style.color = '#6ec88a';
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 4000);
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveSession(), 1500);
+}
+
+async function saveSession({ showStatus = false } = {}) {
   if (total === 0) return;
   const durationMs  = sessionStart ? Date.now() - sessionStart : 0;
   const durationMin = durationMs / 60000;
   const entry = {
-    ts:      Date.now(),
-    date:    new Date().toLocaleString(),
-    day:     new Date().toLocaleDateString(),
+    id:      currentSessionId,
+    ts:      sessionStart,
+    date:    new Date(sessionStart).toLocaleString(),
+    day:     new Date(sessionStart).toLocaleDateString(),
     clef:    clefMode,
     notes:   numNotes,
     sharps:  sharpsOn,
@@ -907,16 +911,20 @@ async function saveSession() {
   if (db && currentUser) {
     const { error } = await db
       .from('sessions')
-      .insert({ ...entry, user_id: currentUser.id });
+      .upsert({ ...entry, user_id: currentUser.id });
     if (error) {
       console.error('saveSession:', error);
       showDbError(error.message);
+    } else if (showStatus) {
+      showDbStatus('Session saved to cloud ✓');
     }
   } else {
     const history = loadLocalHistory();
-    history.unshift(entry);
+    const idx = history.findIndex(s => s.id === currentSessionId);
+    if (idx >= 0) history[idx] = entry; else history.unshift(entry);
     if (history.length > 200) history.length = 200;
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    if (showStatus) showDbStatus(db ? 'Saved locally (not signed in)' : 'Saved locally (no Supabase config)');
   }
 }
 
@@ -925,8 +933,8 @@ async function saveSession() {
 async function mergeLocalHistory() {
   const local = loadLocalHistory();
   if (!local.length || !db || !currentUser) return;
-  const toInsert = local.map(({ id: _id, ...rest }) => ({
-    ...rest,
+  const toInsert = local.map(entry => ({
+    ...entry,
     user_id: currentUser.id,
   }));
   const { error } = await db.from('sessions').insert(toInsert);
@@ -937,19 +945,6 @@ async function mergeLocalHistory() {
   }
 }
 
-async function clearHistory() {
-  if (!confirm('Clear all session history?')) return;
-  if (db && currentUser) {
-    const { error } = await db
-      .from('sessions')
-      .delete()
-      .eq('user_id', currentUser.id);
-    if (error) { console.error('clearHistory:', error); return; }
-  } else {
-    localStorage.removeItem(HISTORY_KEY);
-  }
-  await renderHistory();
-}
 
 // Group sessions by calendar day, return array newest-first
 function groupByDay(history) {
@@ -1077,9 +1072,10 @@ async function startListening() {
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
     audioCtx.createMediaStreamSource(stream).connect(analyser);
-    listening    = true;
+    listening       = true;
     correctCount = 0; streak = 0; total = 0;
-    sessionStart = Date.now();
+    sessionStart    = Date.now();
+    currentSessionId = crypto.randomUUID();
     updateScore();
     document.getElementById('mic-dot').classList.add('active');
     document.getElementById('mic-status').textContent = 'Listening';
@@ -1101,7 +1097,8 @@ function stopListening() {
   document.getElementById('mic-status').textContent = 'Mic off';
   document.getElementById('start-btn').textContent  = 'Start Listening';
   document.getElementById('pitch-display').textContent = '—';
-  saveSession().then(() => renderHistory());
+  clearTimeout(saveTimer);
+  saveSession({ showStatus: true }).then(() => renderHistory());
 }
 
 // ════════════════════════════════════════════════════════
@@ -1130,9 +1127,8 @@ document.getElementById('hint-btn').addEventListener('click', () => {
   document.getElementById('hint-text').textContent = label;
   streak = 0; total++;
   updateScore();
+  scheduleSave();
 });
-
-document.getElementById('clear-btn').addEventListener('click', clearHistory);
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
