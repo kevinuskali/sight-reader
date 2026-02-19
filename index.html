@@ -465,8 +465,21 @@ const SUPABASE_URL      = 'https://ewpqefsfcckhslmfqpwb.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3cHFlZnNmY2NraHNsbWZxcHdiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE0MzMxNzYsImV4cCI6MjA4NzAwOTE3Nn0.KWfdAkWT-CNHYAwXg76wVpr4ATCInwFudoRiEAaN5yY';
 
 // db is null when Supabase is not configured; the app falls back to localStorage.
+// Custom storage that tries localStorage first and falls back to an
+// in-memory map — prevents the Supabase client from hanging when a
+// browser (e.g. Edge with Tracking Prevention) blocks its internal
+// storage access.
+const _mem = {};
+const _storage = {
+  getItem(k)    { try { return localStorage.getItem(k); }    catch { return _mem[k] ?? null; } },
+  setItem(k, v) { try { localStorage.setItem(k, v); }        catch {} _mem[k] = v; },
+  removeItem(k) { try { localStorage.removeItem(k); }        catch {} delete _mem[k]; },
+};
+
 const db = (typeof window.supabase !== 'undefined' && SUPABASE_URL.startsWith('https://'))
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { storage: _storage },
+    })
   : null;
 
 // ════════════════════════════════════════════════════════
