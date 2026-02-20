@@ -535,6 +535,24 @@ let transitioning = false;
 let sessionStart = null; // set when listening begins
 let currentSessionId = null;
 let saveTimer = null;
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (_) {}
+}
+
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+
+// Re-acquire if the tab comes back to foreground while a session is active
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && listening) requestWakeLock();
+});
 
 // ════════════════════════════════════════════════════════
 // SVG LAYOUT CONSTANTS
@@ -1095,6 +1113,7 @@ async function startListening() {
     document.getElementById('start-btn').textContent  = 'Stop';
     newQuestion();
     detectPitch();
+    requestWakeLock();
   } catch(e) {
     alert('Microphone access denied. Please allow mic access and reload.');
   }
@@ -1102,6 +1121,7 @@ async function startListening() {
 
 function stopListening() {
   listening = false;
+  releaseWakeLock();
   if (rafId) cancelAnimationFrame(rafId);
   if (micStream) micStream.getTracks().forEach(t => t.stop());
   if (audioCtx)  audioCtx.close();
