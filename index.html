@@ -535,6 +535,7 @@ let transitioning = false;
 let sessionStart = null; // set when listening begins
 let currentSessionId = null;
 let saveTimer = null;
+let questionShownTime = 0; // timestamp when current question was displayed
 let wakeLock = null;
 
 async function requestWakeLock() {
@@ -626,17 +627,26 @@ function getNoteList(clefType) {
   return pool.filter(n => n.sp >= -2 && n.sp <= 12);
 }
 
+function weightedPick(list, wt) {
+  const weights = list.map(wt);
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < list.length; i++) { r -= weights[i]; if (r <= 0) return list[i]; }
+  return list[list.length - 1];
+}
+
 function pickNotes() {
   const chosenClef = clefMode === 'both'
     ? (Math.random() < 0.5 ? 'treble' : 'bass') : clefMode;
   const list = getNoteList(chosenClef).map(n => ({ ...n, clef: chosenClef }));
-  if (numNotes === 1) return [list[Math.floor(Math.random() * list.length)]];
+  const wt = n => noteStats[`${n.clef}:${n.name}${n.octave}`] ?? SR_DEFAULT;
+  if (numNotes === 1) return [weightedPick(list, wt)];
   let a, b, tries = 0;
   do {
-    a = list[Math.floor(Math.random() * list.length)];
-    b = list[Math.floor(Math.random() * list.length)];
+    a = weightedPick(list, wt);
+    b = weightedPick(list, wt);
     tries++;
-  } while (Math.abs(a.sp - b.sp) < 2 && tries < 80);
+  } while ((a === b || Math.abs(a.sp - b.sp) < 2) && tries < 80);
   return [a, b].sort((x, y) => x.sp - y.sp);
 }
 
@@ -778,6 +788,7 @@ function redraw() {
 // ════════════════════════════════════════════════════════
 function newQuestion() {
   transitioning = false;
+  questionShownTime = Date.now();
   document.getElementById('hint-text').textContent = '';
   document.getElementById('note-display').textContent = '—';
   document.getElementById('note-display').className = 'note-name-display';
@@ -860,6 +871,14 @@ function onCorrect() {
   correctCount++; streak++; total++;
   updateScore();
   scheduleSave();
+  if (questionShownTime > 0) {
+    const ms = Math.min(Date.now() - questionShownTime, SR_MAX);
+    for (const n of currentNotes) {
+      const key = `${n.clef}:${n.name}${n.octave}`;
+      noteStats[key] = SR_ALPHA * ms + (1 - SR_ALPHA) * (noteStats[key] ?? SR_DEFAULT);
+    }
+    saveNoteStats();
+  }
   const label = currentNotes.map(n => n.name + n.octave).join(' + ');
   const el = document.getElementById('note-display');
   el.textContent = '✓ ' + label;
@@ -876,7 +895,16 @@ function updateScore() {
 // ════════════════════════════════════════════════════════
 // SESSION HISTORY  (Supabase when signed in, localStorage otherwise)
 // ════════════════════════════════════════════════════════
-const HISTORY_KEY = 'sightreader_history';
+const HISTORY_KEY    = 'sightreader_history';
+const NOTESTATS_KEY  = 'sightreader_notestats';
+const SR_ALPHA       = 0.3;    // EMA smoothing — higher = faster adaptation
+const SR_DEFAULT     = 4000;   // ms starting weight for never-seen notes
+const SR_MAX         = 30000;  // cap response time to ignore walk-aways
+let noteStats = {};
+try { noteStats = JSON.parse(localStorage.getItem(NOTESTATS_KEY) || '{}'); } catch {}
+function saveNoteStats() {
+  try { localStorage.setItem(NOTESTATS_KEY, JSON.stringify(noteStats)); } catch {}
+}
 let activeTab = 'daily';
 let historyCache = []; // avoids repeated async reads within a single render cycle
 
@@ -1159,6 +1187,7 @@ document.getElementById('hint-btn').addEventListener('click', () => {
   const label = currentNotes.map(n => n.name + n.octave).join(' + ');
   document.getElementById('hint-text').textContent = label;
   streak = 0; total++;
+  questionShownTime = 0; // hinted — don't record response time for this note
   updateScore();
   scheduleSave();
 });
