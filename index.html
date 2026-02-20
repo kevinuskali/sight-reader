@@ -344,6 +344,7 @@
   .pill-good  { background: rgba(110,200,138,0.15); color: var(--green); }
   .pill-total { background: rgba(200,169,110,0.15); color: var(--accent); }
   .pill-blue  { background: rgba(126,184,200,0.15); color: var(--accent2); }
+  .pill-slow  { background: rgba(200,110,110,0.15); color: var(--red); }
 
   .no-history {
     color: var(--muted);
@@ -450,9 +451,11 @@
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="daily">Daily Summary</button>
     <button class="tab-btn" data-tab="sessions">Session Log</button>
+    <button class="tab-btn" data-tab="notes">Note Stats</button>
   </div>
   <div id="view-daily"></div>
   <div id="view-sessions" style="display:none"></div>
+  <div id="view-notes" style="display:none"></div>
 </div>
 
 <script>
@@ -1107,10 +1110,43 @@ function renderSessionLog() {
     </table>`;
 }
 
+function renderNoteStats() {
+  const el = document.getElementById('view-notes');
+  const entries = Object.entries(noteStats);
+  if (!entries.length) {
+    el.innerHTML = '<div class="no-history">No note data yet — complete some sessions to build stats.</div>';
+    return;
+  }
+  const SEMI = { C:0,'C#':1,D:2,'D#':3,E:4,F:5,'F#':6,G:7,'G#':8,A:9,'A#':10,B:11 };
+  const rows = entries.map(([key, ema]) => {
+    const [clef, rest] = key.split(':');
+    const octave = parseInt(rest.slice(-1));
+    const name   = rest.slice(0, -1);
+    const semi   = octave * 12 + (SEMI[name] ?? 0);
+    return { clef, name, octave, semi, ema };
+  }).sort((a, b) => b.semi - a.semi || a.clef.localeCompare(b.clef));
+
+  const fmtTime = ms => { const s = ms / 1000; return s < 10 ? s.toFixed(1) + 's' : Math.round(s) + 's'; };
+  const pillClass = ms => ms < 2000 ? 'pill pill-good' : ms < 5000 ? 'pill pill-total' : 'pill pill-slow';
+
+  el.innerHTML = `
+    <table class="history-table">
+      <thead><tr><th>Note</th><th>Clef</th><th>Avg Response</th></tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td>${r.name}${r.octave}</td>
+          <td style="text-transform:capitalize">${r.clef}</td>
+          <td><span class="${pillClass(r.ema)}">${fmtTime(r.ema)}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
 async function renderHistory() {
   historyCache = await loadHistory();
   renderDailyView();
   renderSessionLog();
+  renderNoteStats();
 }
 
 function switchTab(tab) {
@@ -1118,6 +1154,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('view-daily').style.display    = tab === 'daily'    ? '' : 'none';
   document.getElementById('view-sessions').style.display = tab === 'sessions' ? '' : 'none';
+  document.getElementById('view-notes').style.display    = tab === 'notes'    ? '' : 'none';
 }
 
 // ════════════════════════════════════════════════════════
