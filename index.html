@@ -912,8 +912,34 @@ const SR_DEFAULT     = 4000;   // ms starting weight for never-seen notes
 const SR_MAX         = 30000;  // cap response time to ignore walk-aways
 let noteStats = {};
 try { noteStats = JSON.parse(localStorage.getItem(NOTESTATS_KEY) || '{}'); } catch {}
+let noteStatsDbTimer = null;
+
 function saveNoteStats() {
   try { localStorage.setItem(NOTESTATS_KEY, JSON.stringify(noteStats)); } catch {}
+  // Debounce the Supabase write — fires 3s after the last note
+  if (db && currentUser) {
+    clearTimeout(noteStatsDbTimer);
+    noteStatsDbTimer = setTimeout(async () => {
+      try {
+        const upsert  = db.from('user_settings').upsert({ user_id: currentUser.id, note_stats: noteStats });
+        const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
+        await Promise.race([upsert, timeout]);
+      } catch (e) { console.error('saveNoteStatsToDB:', e); }
+    }, 3000);
+  }
+}
+
+async function loadNoteStatsFromDB() {
+  if (!db || !currentUser) return;
+  try {
+    const query   = db.from('user_settings').select('note_stats').eq('user_id', currentUser.id).single();
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000));
+    const { data, error } = await Promise.race([query, timeout]);
+    if (error || !data?.note_stats) return;
+    // DB is source of truth; preserve any local-only keys not yet synced
+    noteStats = { ...noteStats, ...data.note_stats };
+    try { localStorage.setItem(NOTESTATS_KEY, JSON.stringify(noteStats)); } catch {}
+  } catch (e) { console.error('loadNoteStatsFromDB:', e); }
 }
 let activeTab = 'daily';
 let historyCache = []; // avoids repeated async reads within a single render cycle
@@ -1258,13 +1284,14 @@ if (db) {
     const prevUser = currentUser;
     currentUser = session?.user ?? null;
 
-    // Merge any locally-stored sessions when the user signs in for the first time
-    // in this browser (or after signing out then back in as the same/different user).
-    if (event === 'SIGNED_IN' && currentUser && currentUser.id !== prevUser?.id) {
-      await mergeLocalHistory();
+    // Load cloud data when a user session becomes available
+    if (currentUser && currentUser.id !== prevUser?.id) {
+      await loadNoteStatsFromDB();
+      if (event === 'SIGNED_IN') await mergeLocalHistory();
     }
 
     updateAuthUI();
+    renderNoteStats();
     await renderHistory();
   });
 } else {
