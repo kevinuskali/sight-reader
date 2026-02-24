@@ -645,19 +645,26 @@ function weightedPick(list, wt) {
   return list[list.length - 1];
 }
 
-function pickNotes() {
+function pickNotes(prev = []) {
   const chosenClef = clefMode === 'both'
     ? (Math.random() < 0.5 ? 'treble' : 'bass') : clefMode;
   const list = getNoteList(chosenClef).map(n => ({ ...n, clef: chosenClef }));
   const wt = n => noteStats[`${n.clef}:${n.name}${n.octave}`] ?? SR_DEFAULT;
-  if (numNotes === 1) return [weightedPick(list, wt)];
+  const sameAsPrev = notes => prev.length === notes.length &&
+    notes.every((n, i) => prev[i] && n.name === prev[i].name && n.octave === prev[i].octave && n.clef === prev[i].clef);
+  if (numNotes === 1) {
+    let pick, tries = 0;
+    do { pick = weightedPick(list, wt); tries++; } while (sameAsPrev([pick]) && tries < 80);
+    return [pick];
+  }
   let a, b, tries = 0;
   do {
     a = weightedPick(list, wt);
     b = weightedPick(list, wt);
     tries++;
   } while ((a === b || Math.abs(a.sp - b.sp) < 2) && tries < 80);
-  return [a, b].sort((x, y) => x.sp - y.sp);
+  const result = [a, b].sort((x, y) => x.sp - y.sp);
+  return sameAsPrev(result) ? pickNotes([]) : result;
 }
 
 // ════════════════════════════════════════════════════════
@@ -802,7 +809,7 @@ function newQuestion() {
   document.getElementById('hint-text').textContent = '';
   document.getElementById('note-display').textContent = '—';
   document.getElementById('note-display').className = 'note-name-display';
-  currentNotes = pickNotes();
+  currentNotes = pickNotes(currentNotes);
   redraw();
 }
 
