@@ -111,6 +111,21 @@
   .toggle-btn:last-child { border-right: none; }
   .toggle-btn.active { background: var(--accent); color: #0e0e12; font-weight: 700; }
 
+  .ctrl-select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    padding: 0.4rem 0.6rem;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .ctrl-select:focus { outline: none; border-color: var(--accent); }
+
   .main-card {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -403,15 +418,16 @@
 <div id="db-error"></div>
 
 <div class="controls">
-  <div class="toggle-group" id="clef-toggle">
-    <button class="toggle-btn active" data-val="treble">Treble</button>
-    <button class="toggle-btn" data-val="bass">Bass</button>
-    <button class="toggle-btn" data-val="both">Both</button>
-  </div>
-  <div class="toggle-group" id="notes-toggle">
-    <button class="toggle-btn active" data-val="1">1 Note</button>
-    <button class="toggle-btn" data-val="2">2 Notes</button>
-  </div>
+  <select id="clef-select" class="ctrl-select">
+    <option value="treble">Treble</option>
+    <option value="bass">Bass</option>
+    <option value="both">Both</option>
+  </select>
+  <select id="notes-select" class="ctrl-select">
+    <option value="1">1 Note</option>
+    <option value="2">2 Notes</option>
+    <option value="3">Triad</option>
+  </select>
   <div class="toggle-group" id="sharps-toggle">
     <button class="toggle-btn active" data-val="off">No Sharps</button>
     <button class="toggle-btn" data-val="on">Sharps</button>
@@ -546,6 +562,7 @@ let listening = false;
 let audioCtx = null, analyser = null, micStream = null, rafId = null;
 let correctCount = 0, streak = 0, total = 0;
 let currentNotes = [];
+let currentChordLabel = '';
 let transitioning = false;
 let sessionStart = null; // set when listening begins
 let currentSessionId = null;
@@ -644,6 +661,24 @@ function getNoteList(clefType) {
   return pool.filter(n => n.sp >= -2 && n.sp <= 12);
 }
 
+const SEMITONES = {C:0,'C#':1,D:2,'D#':3,E:4,F:5,'F#':6,G:7,'G#':8,A:9,'A#':10,B:11};
+function noteToMidi(name, octave) { return (SEMITONES[name] ?? 0) + octave * 12; }
+
+function buildTriads(clef) {
+  const list = getNoteList(clef).map(n => ({ ...n, clef }));
+  const byMidi = new Map(list.map(n => [noteToMidi(n.name, n.octave), n]));
+  const triads = [];
+  for (const root of list) {
+    const midi = noteToMidi(root.name, root.octave);
+    const fifth    = byMidi.get(midi + 7);
+    const majThird = byMidi.get(midi + 4);
+    const minThird = byMidi.get(midi + 3);
+    if (majThird && fifth) triads.push({ label: root.name + ' major', notes: [root, majThird, fifth] });
+    if (minThird && fifth) triads.push({ label: root.name + ' minor', notes: [root, minThird, fifth] });
+  }
+  return triads;
+}
+
 function weightedPick(list, wt) {
   const weights = list.map(wt);
   const total = weights.reduce((a, b) => a + b, 0);
@@ -653,6 +688,7 @@ function weightedPick(list, wt) {
 }
 
 function pickNotes(prev = []) {
+  currentChordLabel = '';
   const chosenClef = clefMode === 'both'
     ? (Math.random() < 0.5 ? 'treble' : 'bass') : clefMode;
   const list = getNoteList(chosenClef).map(n => ({ ...n, clef: chosenClef }));
@@ -663,6 +699,18 @@ function pickNotes(prev = []) {
     let pick, tries = 0;
     do { pick = weightedPick(list, wt); tries++; } while (sameAsPrev([pick]) && tries < 80);
     return [pick];
+  }
+  if (numNotes === 3) {
+    const triads = buildTriads(chosenClef);
+    if (!triads.length) return pickNotes(prev);
+    const wt = t => noteStats[`${chosenClef}:${t.notes[0].name}${t.notes[0].octave}`] ?? SR_DEFAULT;
+    let triad, tries = 0;
+    do {
+      triad = weightedPick(triads, wt);
+      tries++;
+    } while (sameAsPrev(triad.notes.sort((a, b) => a.sp - b.sp)) && tries < 80);
+    currentChordLabel = triad.label;
+    return triad.notes.sort((a, b) => a.sp - b.sp);
   }
   let a, b, tries = 0;
   do {
@@ -903,7 +951,7 @@ function onCorrect() {
     }
     saveNoteStats();
   }
-  const label = currentNotes.map(n => n.name + n.octave).join(' + ');
+  const label = currentChordLabel || currentNotes.map(n => n.name + n.octave).join(' + ');
   const el = document.getElementById('note-display');
   el.textContent = '✓ ' + label;
   el.className = 'note-name-display correct';
@@ -1148,7 +1196,7 @@ function renderSessionLog() {
     <tr>
       <td>${new Date(s.ts || s.date).toLocaleString()}</td>
       <td style="text-transform:capitalize">${s.clef}${s.sharps ? ' ♯' : ''}</td>
-      <td>${s.notes}</td>
+      <td>${s.notes === 3 ? 'Triad' : s.notes}</td>
       <td><span class="pill pill-good">${s.correct} / ${s.total}</span></td>
       <td><span class="pill pill-total">${s.pct}%</span></td>
       <td>${fmtMins(s.mins || 0)}</td>
@@ -1265,8 +1313,8 @@ function setupToggle(id, cb) {
   });
 }
 
-setupToggle('clef-toggle',   val => { clefMode  = val;            newQuestion(); });
-setupToggle('notes-toggle',  val => { numNotes  = parseInt(val);  newQuestion(); });
+document.getElementById('clef-select').addEventListener('change', e => { clefMode = e.target.value; newQuestion(); });
+document.getElementById('notes-select').addEventListener('change', e => { numNotes = parseInt(e.target.value); newQuestion(); });
 setupToggle('sharps-toggle', val => { sharpsOn  = val === 'on';   newQuestion(); });
 
 document.getElementById('start-btn').addEventListener('click', () => {
@@ -1274,7 +1322,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
 });
 
 document.getElementById('hint-btn').addEventListener('click', () => {
-  const label = currentNotes.map(n => n.name + n.octave).join(' + ');
+  const label = currentChordLabel || currentNotes.map(n => n.name + n.octave).join(' + ');
   document.getElementById('hint-text').textContent = label;
   streak = 0; total++;
   questionShownTime = 0; // hinted — don't record response time for this note
