@@ -431,6 +431,7 @@
     <option value="1">1 Note</option>
     <option value="2">2 Notes</option>
     <option value="3">Triad</option>
+    <option value="4">Triad+inv</option>
   </select>
   <select id="sharps-select" class="ctrl-select">
     <option value="off">No Sharps</option>
@@ -684,6 +685,25 @@ function buildTriads(clef) {
   return triads;
 }
 
+function buildTriadsWithInversions(clef) {
+  const result = [];
+  for (const triad of buildTriads(clef)) {
+    const [root, third, fifth] = triad.notes; // already sorted by sp (low→high)
+    result.push(triad);
+
+    // First inversion: move root up an octave → (third, fifth, root')
+    const rootUp = { ...root, octave: root.octave + 1, sp: root.sp + 7 };
+    if (rootUp.sp <= 12)
+      result.push({ label: triad.label + ' 1st inv', notes: [third, fifth, rootUp].sort((a, b) => a.sp - b.sp) });
+
+    // Second inversion: move root and third up → (fifth, root', third')
+    const thirdUp = { ...third, octave: third.octave + 1, sp: third.sp + 7 };
+    if (rootUp.sp <= 12 && thirdUp.sp <= 12)
+      result.push({ label: triad.label + ' 2nd inv', notes: [fifth, rootUp, thirdUp].sort((a, b) => a.sp - b.sp) });
+  }
+  return result;
+}
+
 function weightedPick(list, wt) {
   const weights = list.map(wt);
   const total = weights.reduce((a, b) => a + b, 0);
@@ -705,13 +725,13 @@ function pickNotes(prev = []) {
     do { pick = weightedPick(list, wt); tries++; } while (sameAsPrev([pick]) && tries < 80);
     return [pick];
   }
-  if (numNotes === 3) {
-    const triads = buildTriads(chosenClef);
+  if (numNotes === 3 || numNotes === 4) {
+    const triads = numNotes === 4 ? buildTriadsWithInversions(chosenClef) : buildTriads(chosenClef);
     if (!triads.length) return pickNotes(prev);
-    const wt = t => noteStats[`${chosenClef}:${t.label}`] ?? SR_DEFAULT;
+    const wtTriad = t => noteStats[`${chosenClef}:${t.label}`] ?? SR_DEFAULT;
     let triad, tries = 0;
     do {
-      triad = weightedPick(triads, wt);
+      triad = weightedPick(triads, wtTriad);
       tries++;
     } while (sameAsPrev(triad.notes.sort((a, b) => a.sp - b.sp)) && tries < 80);
     currentChordLabel = triad.label;
@@ -935,7 +955,7 @@ function detectPitch() {
   if (!analyser || !listening) return;
   const pitchEl = document.getElementById('pitch-display');
 
-  if (numNotes === 3 && chordAnalyser) {
+  if ((numNotes === 3 || numNotes === 4) && chordAnalyser) {
     if (currentNotes.length) {
       const detected = detectChord();
       pitchEl.textContent = currentNotes
@@ -1187,8 +1207,8 @@ function renderDailyView() {
     const speedNum     = totalMins > 0 ? totalCorrect / totalMins : null;
 
     // Per-mode breakdown
-    const MODE_LABEL = { 1: '1 Note', 2: '2 Notes', 3: 'Triad' };
-    const modes = [1, 2, 3].map(m => {
+    const MODE_LABEL = { 1: '1 Note', 2: '2 Notes', 3: 'Triad', 4: 'Triad+inv' };
+    const modes = [1, 2, 3, 4].map(m => {
       const ss = d.sessions.filter(s => s.notes === m);
       if (!ss.length) return null;
       const correct = ss.reduce((a, s) => a + s.correct, 0);
@@ -1265,7 +1285,7 @@ function renderSessionLog() {
     <tr>
       <td>${new Date(s.ts || s.date).toLocaleString()}</td>
       <td style="text-transform:capitalize">${s.clef}${s.sharps ? ' ♯' : ''}</td>
-      <td>${s.notes === 3 ? 'Triad' : s.notes}</td>
+      <td>${s.notes === 3 ? 'Triad' : s.notes === 4 ? 'Triad+inv' : s.notes}</td>
       <td><span class="pill pill-good">${s.correct} / ${s.total}</span></td>
       <td><span class="pill pill-total">${s.pct}%</span></td>
       <td>${fmtMins(s.mins || 0)}</td>
