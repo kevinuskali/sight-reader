@@ -335,6 +335,10 @@
     color: var(--muted);
     letter-spacing: 0.05em;
   }
+  .mode-breakdown { border-top: 1px solid var(--border); }
+  .mode-breakdown .history-table th,
+  .mode-breakdown .history-table td { padding: 0.3rem 0.9rem; }
+
   .session-rows { border-top: 1px solid var(--border); }
   .session-row {
     display: grid;
@@ -1145,8 +1149,17 @@ function renderDailyView() {
   el.innerHTML = days.map(d => {
     const totalCorrect = d.sessions.reduce((s, x) => s + x.correct, 0);
     const totalMins    = d.sessions.reduce((s, x) => s + (x.mins || 0), 0);
-    const speed        = totalMins > 0 ? (totalCorrect / totalMins).toFixed(1) : '—';
-    const speedNum     = totalMins > 0 ? parseFloat(speed) : null;
+    const speedNum     = totalMins > 0 ? totalCorrect / totalMins : null;
+
+    // Per-mode breakdown
+    const MODE_LABEL = { 1: '1 Note', 2: '2 Notes', 3: 'Triad' };
+    const modes = [1, 2, 3].map(m => {
+      const ss = d.sessions.filter(s => s.notes === m);
+      if (!ss.length) return null;
+      const correct = ss.reduce((a, s) => a + s.correct, 0);
+      const mins    = ss.reduce((a, s) => a + (s.mins || 0), 0);
+      return { label: MODE_LABEL[m], correct, mins };
+    }).filter(Boolean);
 
     // Format day label: "Today", "Yesterday", or date string
     const now = new Date();
@@ -1155,6 +1168,21 @@ function renderDailyView() {
     let dayLabel = d.day;
     if (d.day === todayStr)          dayLabel = `Today — ${d.day}`;
     else if (d.day === yesterdayStr) dayLabel = `Yesterday — ${d.day}`;
+
+    const breakdownHtml = `
+      <div class="mode-breakdown">
+        <table class="history-table">
+          <thead><tr><th>Mode</th><th>Correct</th><th>Time</th><th>Speed</th></tr></thead>
+          <tbody>${modes.map(m => `
+            <tr>
+              <td>${m.label}</td>
+              <td>${m.correct}</td>
+              <td>${fmtMins(m.mins)}</td>
+              <td>${m.mins > 0 ? (m.correct / m.mins).toFixed(1) + ' /min' : '—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
 
     const sessionRows = d.sessions.map(s => `
       <div class="session-row">
@@ -1170,7 +1198,7 @@ function renderDailyView() {
         <div class="day-header">${dayLabel}</div>
         <div class="day-stats">
           <div class="stat-cell">
-            <div class="stat-label">Correct Notes</div>
+            <div class="stat-label">Correct</div>
             <div class="stat-value green">${totalCorrect}</div>
             <div class="stat-sub">across ${d.sessions.length} session${d.sessions.length > 1 ? 's' : ''}</div>
           </div>
@@ -1182,9 +1210,10 @@ function renderDailyView() {
           <div class="stat-cell">
             <div class="stat-label">Speed</div>
             <div class="stat-value gold">${speedNum !== null ? speedNum.toFixed(1) : '—'}</div>
-            <div class="stat-sub">correct notes / min</div>
+            <div class="stat-sub">correct / min</div>
           </div>
         </div>
+        ${breakdownHtml}
         <div class="session-rows">${sessionRows}</div>
       </div>`;
   }).join('');
