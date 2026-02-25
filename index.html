@@ -911,27 +911,23 @@ function autoCorrelate(buf, sr) {
 
 let pitchBuf = null, freqData = null, lastCorrectTime = 0;
 
+// Minimum dBFS each note's fundamental bin must reach to count as "sounding".
+// getFloatFrequencyData returns true dBFS: a piano note at practice volume is
+// roughly -25 to -10 dBFS; background noise per bin is typically -80 to -60 dBFS.
+const CHORD_THRESHOLD_DB = -35;
+
 // Returns an array of booleans — one per currentNote — indicating which
 // are simultaneously present in the FFT spectrum right now.
 function detectChord() {
   if (!freqData) freqData = new Float32Array(chordAnalyser.frequencyBinCount);
   chordAnalyser.getFloatFrequencyData(freqData);
-
-  // Require the overall signal to be above the noise floor first.
-  let peakDb = -Infinity;
-  for (let i = 0; i < freqData.length; i++) if (freqData[i] > peakDb) peakDb = freqData[i];
-  if (peakDb < -65) return currentNotes.map(() => false);
-
   const binHz = audioCtx.sampleRate / chordAnalyser.fftSize;
-  // A note is present if energy within ±2 bins of its fundamental is within
-  // 28 dB of the spectrum peak (handles varying mic gain levels).
-  const threshold = peakDb - 28;
   return currentNotes.map(note => {
     const bin = Math.round(midiToFreq(noteToMidi(note.name, note.octave)) / binHz);
     let maxDb = -Infinity;
     for (let i = Math.max(0, bin - 2); i <= Math.min(freqData.length - 1, bin + 2); i++)
       maxDb = Math.max(maxDb, freqData[i]);
-    return maxDb > threshold;
+    return maxDb > CHORD_THRESHOLD_DB;
   });
 }
 
