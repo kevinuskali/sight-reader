@@ -428,10 +428,10 @@
     <option value="2">2 Notes</option>
     <option value="3">Triad</option>
   </select>
-  <div class="toggle-group" id="sharps-toggle">
-    <button class="toggle-btn active" data-val="off">No Sharps</button>
-    <button class="toggle-btn" data-val="on">Sharps</button>
-  </div>
+  <select id="sharps-select" class="ctrl-select">
+    <option value="off">No Sharps</option>
+    <option value="on">Sharps</option>
+  </select>
 </div>
 
 <div class="main-card">
@@ -1303,19 +1303,10 @@ function stopListening() {
 // ════════════════════════════════════════════════════════
 // CONTROLS
 // ════════════════════════════════════════════════════════
-function setupToggle(id, cb) {
-  document.getElementById(id).querySelectorAll('.toggle-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.getElementById(id).querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      cb(btn.dataset.val);
-    });
-  });
-}
 
 document.getElementById('clef-select').addEventListener('change', e => { clefMode = e.target.value; newQuestion(); });
 document.getElementById('notes-select').addEventListener('change', e => { numNotes = parseInt(e.target.value); newQuestion(); });
-setupToggle('sharps-toggle', val => { sharpsOn  = val === 'on';   newQuestion(); });
+document.getElementById('sharps-select').addEventListener('change', e => { sharpsOn = e.target.value === 'on'; newQuestion(); });
 
 document.getElementById('start-btn').addEventListener('click', () => {
   if (listening) stopListening(); else startListening();
