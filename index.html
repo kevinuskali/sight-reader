@@ -703,7 +703,7 @@ function pickNotes(prev = []) {
   if (numNotes === 3) {
     const triads = buildTriads(chosenClef);
     if (!triads.length) return pickNotes(prev);
-    const wt = t => noteStats[`${chosenClef}:${t.notes[0].name}${t.notes[0].octave}`] ?? SR_DEFAULT;
+    const wt = t => noteStats[`${chosenClef}:${t.label}`] ?? SR_DEFAULT;
     let triad, tries = 0;
     do {
       triad = weightedPick(triads, wt);
@@ -945,9 +945,14 @@ function onCorrect() {
   scheduleSave();
   if (questionShownTime > 0) {
     const ms = Math.min(Date.now() - questionShownTime, SR_MAX);
-    for (const n of currentNotes) {
-      const key = `${n.clef}:${n.name}${n.octave}`;
+    if (currentChordLabel) {
+      const key = `${currentNotes[0].clef}:${currentChordLabel}`;
       noteStats[key] = SR_ALPHA * ms + (1 - SR_ALPHA) * (noteStats[key] ?? SR_DEFAULT);
+    } else {
+      for (const n of currentNotes) {
+        const key = `${n.clef}:${n.name}${n.octave}`;
+        noteStats[key] = SR_ALPHA * ms + (1 - SR_ALPHA) * (noteStats[key] ?? SR_DEFAULT);
+      }
     }
     saveNoteStats();
   }
@@ -1219,26 +1224,34 @@ function renderNoteStats() {
     return;
   }
   const SEMI = { C:0,'C#':1,D:2,'D#':3,E:4,F:5,'F#':6,G:7,'G#':8,A:9,'A#':10,B:11 };
-  const rows = entries.map(([key, ema]) => {
-    const [clef, rest] = key.split(':');
-    const octave = parseInt(rest.slice(-1));
-    const name   = rest.slice(0, -1);
-    const semi   = octave * 12 + (SEMI[name] ?? 0);
-    return { clef, name, octave, semi, ema };
-  }).sort((a, b) => b.semi - a.semi || a.clef.localeCompare(b.clef));
+  const noteRows = [], chordRows = [];
+  for (const [key, ema] of entries) {
+    const [clef, rest] = key.split(/:(.+)/);
+    if (rest.includes(' ')) {
+      chordRows.push({ clef, label: rest, ema });
+    } else {
+      const octave = parseInt(rest.slice(-1));
+      const name   = rest.slice(0, -1);
+      const semi   = octave * 12 + (SEMI[name] ?? 0);
+      noteRows.push({ clef, label: name + octave, semi, ema });
+    }
+  }
+  noteRows.sort((a, b) => b.semi - a.semi || a.clef.localeCompare(b.clef));
+  chordRows.sort((a, b) => a.label.localeCompare(b.label) || a.clef.localeCompare(b.clef));
 
   const fmtTime = ms => { const s = ms / 1000; return s < 10 ? s.toFixed(1) + 's' : Math.round(s) + 's'; };
   const pillClass = ms => ms < 2000 ? 'pill pill-good' : ms < 5000 ? 'pill pill-total' : 'pill pill-slow';
+  const mkRow = r => `
+        <tr>
+          <td>${r.label}</td>
+          <td style="text-transform:capitalize">${r.clef}</td>
+          <td><span class="${pillClass(r.ema)}">${fmtTime(r.ema)}</span></td>
+        </tr>`;
 
   el.innerHTML = `
     <table class="history-table">
-      <thead><tr><th>Note</th><th>Clef</th><th>Avg Response</th></tr></thead>
-      <tbody>${rows.map(r => `
-        <tr>
-          <td>${r.name}${r.octave}</td>
-          <td style="text-transform:capitalize">${r.clef}</td>
-          <td><span class="${pillClass(r.ema)}">${fmtTime(r.ema)}</span></td>
-        </tr>`).join('')}
+      <thead><tr><th>Note / Chord</th><th>Clef</th><th>Avg Response</th></tr></thead>
+      <tbody>${[...noteRows, ...chordRows].map(mkRow).join('')}
       </tbody>
     </table>`;
 }
