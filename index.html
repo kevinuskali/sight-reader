@@ -563,7 +563,7 @@ let clefMode = 'treble';
 let numNotes = 1;
 let sharpsOn = false;
 let listening = false;
-let audioCtx = null, analyser = null, micStream = null, rafId = null;
+let audioCtx = null, analyser = null, chordAnalyser = null, micStream = null, rafId = null;
 let correctCount = 0, streak = 0, total = 0;
 let currentNotes = [];
 let currentChordLabel = '';
@@ -667,6 +667,7 @@ function getNoteList(clefType) {
 
 const SEMITONES = {C:0,'C#':1,D:2,'D#':3,E:4,F:5,'F#':6,G:7,'G#':8,A:9,'A#':10,B:11};
 function noteToMidi(name, octave) { return (SEMITONES[name] ?? 0) + octave * 12; }
+function midiToFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
 
 function buildTriads(clef) {
   const list = getNoteList(clef).map(n => ({ ...n, clef }));
@@ -908,14 +909,52 @@ function autoCorrelate(buf, sr) {
   return sr / T0;
 }
 
-let pitchBuf = null, lastCorrectTime = 0;
+let pitchBuf = null, freqData = null, lastCorrectTime = 0;
+
+// Returns an array of booleans — one per currentNote — indicating which
+// are simultaneously present in the FFT spectrum right now.
+function detectChord() {
+  if (!freqData) freqData = new Float32Array(chordAnalyser.frequencyBinCount);
+  chordAnalyser.getFloatFrequencyData(freqData);
+
+  // Require the overall signal to be above the noise floor first.
+  let peakDb = -Infinity;
+  for (let i = 0; i < freqData.length; i++) if (freqData[i] > peakDb) peakDb = freqData[i];
+  if (peakDb < -65) return currentNotes.map(() => false);
+
+  const binHz = audioCtx.sampleRate / chordAnalyser.fftSize;
+  // A note is present if energy within ±2 bins of its fundamental is within
+  // 28 dB of the spectrum peak (handles varying mic gain levels).
+  const threshold = peakDb - 28;
+  return currentNotes.map(note => {
+    const bin = Math.round(midiToFreq(noteToMidi(note.name, note.octave)) / binHz);
+    let maxDb = -Infinity;
+    for (let i = Math.max(0, bin - 2); i <= Math.min(freqData.length - 1, bin + 2); i++)
+      maxDb = Math.max(maxDb, freqData[i]);
+    return maxDb > threshold;
+  });
+}
 
 function detectPitch() {
   if (!analyser || !listening) return;
+  const pitchEl = document.getElementById('pitch-display');
+
+  if (numNotes === 3 && chordAnalyser) {
+    if (currentNotes.length) {
+      const detected = detectChord();
+      pitchEl.textContent = currentNotes
+        .map((n, i) => (detected[i] ? '' : '[') + n.name + n.octave + (detected[i] ? '' : ']'))
+        .join(' ');
+      if (detected.every(Boolean) && !transitioning && Date.now() - lastCorrectTime >= 700)
+        onCorrect();
+    }
+    rafId = requestAnimationFrame(detectPitch);
+    return;
+  }
+
   if (!pitchBuf) pitchBuf = new Float32Array(analyser.fftSize);
   analyser.getFloatTimeDomainData(pitchBuf);
   const freq = autoCorrelate(pitchBuf, audioCtx.sampleRate);
-  const pitchEl = document.getElementById('pitch-display');
   if (freq > 0) {
     const det = freqToNote(freq);
     pitchEl.textContent = `${det.name}${det.octave} · ${Math.round(freq)} Hz`;
@@ -1308,9 +1347,13 @@ async function startListening() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     micStream = stream;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const micSource = audioCtx.createMediaStreamSource(stream);
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
-    audioCtx.createMediaStreamSource(stream).connect(analyser);
+    micSource.connect(analyser);
+    chordAnalyser = audioCtx.createAnalyser();
+    chordAnalyser.fftSize = 8192; // ~5.4 Hz/bin — resolves major vs minor thirds
+    micSource.connect(chordAnalyser);
     listening       = true;
     correctCount = 0; streak = 0; total = 0;
     sessionStart    = Date.now();
@@ -1333,7 +1376,7 @@ function stopListening() {
   if (rafId) cancelAnimationFrame(rafId);
   if (micStream) micStream.getTracks().forEach(t => t.stop());
   if (audioCtx)  audioCtx.close();
-  pitchBuf = null;
+  pitchBuf = null; freqData = null; chordAnalyser = null;
   document.getElementById('mic-dot').classList.remove('active');
   document.getElementById('mic-status').textContent = 'Mic off';
   document.getElementById('start-btn').textContent  = 'Start Listening';
